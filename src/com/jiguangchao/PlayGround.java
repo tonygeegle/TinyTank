@@ -8,6 +8,8 @@ import java.util.Random;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+// 引入全局变量
+import static com.jiguangchao.GlobalSettings.*;
 
 class SingleRandom extends Random {
     public static SingleRandom INSTANCE = new SingleRandom();
@@ -16,8 +18,16 @@ class SingleRandom extends Random {
     }
 }
 
-class Globals {
 
+
+class UtilTools {
+    public static void delay(int milliseconds) {
+        try {
+            Thread.sleep(milliseconds);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 }
 
 enum Directions {
@@ -34,8 +44,12 @@ class Tank extends Rectangle2D.Double {
     private static int NEXT_ID = 0;
     private int id = NEXT_ID++;
     private int HP = 100;
+    // Tank 类自己维护本 tank 所属的集团军
+    public static ArrayList<Tank> tankGroup = new ArrayList<>(20);
+    // Graphics2D
+    private Graphics2D g;
+
     private Directions direction = Directions.CENTER;
-    private static final int SIDE_LENGTH = 50;
 
     public Tank(double x, double y) {
         super(x, y, SIDE_LENGTH, SIDE_LENGTH);
@@ -43,6 +57,7 @@ class Tank extends Rectangle2D.Double {
 
     public Tank() {
         super(SIDE_LENGTH * NEXT_ID, 0, SIDE_LENGTH, SIDE_LENGTH);
+        tankGroup.add(this);
     }
 
     public int getId() {
@@ -62,11 +77,25 @@ class Tank extends Rectangle2D.Double {
 
     }
 
+    private boolean isCollide(Tank tempoTank, ArrayList<Tank> tanks) {
+        for (var tank: tanks) {
+            // 锁定目标tank,防止比较过程中目标tank的位置被其它线程修改
+            synchronized (tank) {
+                if (tank.getId() != id && tempoTank.intersects(tank)) {
+                    System.out.println(this + "collide->" + tank);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private void move(Directions direction, int steps) {
         for (int i = 0; i < steps; i++) {
             double curX = getX();
             double curY = getY();
-            delay(DELAY);
+
+            UtilTools.delay(DELAY);
 
             switch (direction) {
                 case EAST -> {
@@ -85,28 +114,30 @@ class Tank extends Rectangle2D.Double {
 
                 }
             }
-            // 边界检测
-            Tank rect = new Tank(curX , curY, SIDE_LENGTH, SIDE_LENGTH);
-            if (isCollide(rect, tanks) || curX + SIDE_LENGTH > DEFAULT_WIDTH || curX < 0 || curY + SIDE_LENGTH > DEFAULT_HEIGHT || curY < 0) {
+            // 碰撞检测 & 边界检测
+            Tank rect = new Tank(curX , curY);
+            if (isCollide(rect, Tank.tankGroup) || curX + SIDE_LENGTH > DEFAULT_WIDTH || curX < 0 || curY + SIDE_LENGTH > DEFAULT_HEIGHT || curY < 0) {
                 direction = direction.getNextRandomDirection();
                 continue;
             }
-            // 碰撞检测
-            //
-            //wlock.lock();
-            try {
-                target.setFrame(curX, curY, SIDE_LENGTH, SIDE_LENGTH);
+
+            // 没有其它线程访问当前对象时候才进行修改！
+            synchronized (this) {
+                setFrame(curX, curY, SIDE_LENGTH, SIDE_LENGTH);
             }
-            finally {
-                //wlock.unlock();
-            }
-            repaint();
+            //repaint();
         }
     }
 
+    private void repaint() {
+        g.draw(this);
+        g.drawString(String.valueOf(getId()),(float) (getX() + SIDE_LENGTH / 3), (float) (getY() + SIDE_LENGTH / 2));
+    }
+
+
     public void paintSelf(Graphics2D g2) {
-        g2.draw(this);
-        g2.drawString(String.valueOf(getId()),(float) (getX() + SIDE_LENGTH / 3), (float) (getY() + SIDE_LENGTH / 2));
+        this.g = g2;
+        repaint();
     }
 
     @Override
@@ -120,17 +151,10 @@ class Tank extends Rectangle2D.Double {
 }
 
 public class PlayGround extends JComponent {
-    private static final int DEFAULT_WIDTH = 800;
-    private static final int DEFAULT_HEIGHT = 600;
-    private static final int MOVE_DISTANCE = 25;
-    private static final int DELAY = 1000;
-    private static final int SIDE_LENGTH = 50;
-
     private ArrayList<Tank> tanks;
-
-    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final Lock rlock = rwLock.readLock();
-    private final Lock wlock = rwLock.writeLock();
+//    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
+//    private final Lock rlock = rwLock.readLock();
+//    private final Lock wlock = rwLock.writeLock();
 
     private Random random = SingleRandom.INSTANCE;
 
@@ -149,7 +173,7 @@ public class PlayGround extends JComponent {
 //            x = random.nextDouble() * rangeX;
 //            y = random.nextDouble() * rangeY;
             x = i * SIDE_LENGTH;
-            var tank = new Tank(x, y, SIDE_LENGTH, SIDE_LENGTH);
+            var tank = new Tank(x, y);
             tanks.add(tank);
             Thread t = new Thread(new MoveTank(tank));
             t.start();
