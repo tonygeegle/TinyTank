@@ -5,10 +5,8 @@ import java.awt.*;
 import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.util.Random;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-// 引入全局变量
+import java.util.concurrent.CopyOnWriteArrayList;
+// 引入全局常量
 import static com.jiguangchao.GlobalSettings.*;
 
 class SingleRandom extends Random {
@@ -17,8 +15,6 @@ class SingleRandom extends Random {
     private SingleRandom() {
     }
 }
-
-
 
 class UtilTools {
     public static void delay(int milliseconds) {
@@ -45,7 +41,7 @@ class Tank extends Rectangle2D.Double {
     private int id = NEXT_ID++;
     private int HP = 100;
     // Tank 类自己维护本 tank 所属的集团军
-    public static ArrayList<Tank> tankGroup = new ArrayList<>(20);
+    public static CopyOnWriteArrayList<Tank> tankGroup = new CopyOnWriteArrayList<Tank>();
     // Graphics2D
     private Graphics2D g;
 
@@ -53,11 +49,11 @@ class Tank extends Rectangle2D.Double {
 
     public Tank(double x, double y) {
         super(x, y, SIDE_LENGTH, SIDE_LENGTH);
+        tankGroup.add(this);
     }
 
     public Tank() {
-        super(SIDE_LENGTH * NEXT_ID, 0, SIDE_LENGTH, SIDE_LENGTH);
-        tankGroup.add(this);
+        this(SIDE_LENGTH * NEXT_ID, 0);
     }
 
     public int getId() {
@@ -73,24 +69,25 @@ class Tank extends Rectangle2D.Double {
         return direction;
     }
 
-    public void move() {
-
-    }
-
-    private boolean isCollide(Tank tempoTank, ArrayList<Tank> tanks) {
-        for (var tank: tanks) {
+    private boolean isCollide(Rectangle2D.Double tempoRect) {
+        for (var tank: tankGroup) {
             // 锁定目标tank,防止比较过程中目标tank的位置被其它线程修改
-            synchronized (tank) {
-                if (tank.getId() != id && tempoTank.intersects(tank)) {
+//            synchronized (tank) {
+                if (tank.getId() != id && tempoRect.intersects(tank)) {
                     System.out.println(this + "collide->" + tank);
                     return true;
                 }
-            }
+//            }
         }
         return false;
     }
 
-    private void move(Directions direction, int steps) {
+    public void move() {
+        int steps = SingleRandom.INSTANCE.nextInt(DEFAULT_WIDTH / MOVE_DISTANCE);
+        move(changeAndGetDirection(), steps);
+    }
+
+    public void move(Directions direction, int steps) {
         for (int i = 0; i < steps; i++) {
             double curX = getX();
             double curY = getY();
@@ -115,17 +112,17 @@ class Tank extends Rectangle2D.Double {
                 }
             }
             // 碰撞检测 & 边界检测
-            Tank rect = new Tank(curX , curY);
-            if (isCollide(rect, Tank.tankGroup) || curX + SIDE_LENGTH > DEFAULT_WIDTH || curX < 0 || curY + SIDE_LENGTH > DEFAULT_HEIGHT || curY < 0) {
-                direction = direction.getNextRandomDirection();
+            var tempoRect = new Rectangle2D.Double(curX, curY, SIDE_LENGTH, SIDE_LENGTH);
+            if (isCollide(tempoRect) || curX + SIDE_LENGTH > DEFAULT_WIDTH || curX < 0 || curY + SIDE_LENGTH > DEFAULT_HEIGHT || curY < 0) {
+                changeAndGetDirection();
                 continue;
             }
 
             // 没有其它线程访问当前对象时候才进行修改！
-            synchronized (this) {
+//            synchronized (this) {
                 setFrame(curX, curY, SIDE_LENGTH, SIDE_LENGTH);
-            }
-            //repaint();
+//            }
+            repaint();
         }
     }
 
@@ -151,16 +148,15 @@ class Tank extends Rectangle2D.Double {
 }
 
 public class PlayGround extends JComponent {
-    private ArrayList<Tank> tanks;
+//    private ArrayList<Tank> tanks;
 //    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
 //    private final Lock rlock = rwLock.readLock();
 //    private final Lock wlock = rwLock.writeLock();
 
-    private Random random = SingleRandom.INSTANCE;
+//    private Random random = SingleRandom.INSTANCE;
 
     public PlayGround() {
-        tanks = new ArrayList<>(10);
-        addTanks(15);
+        addTanks(5);
     }
 
 
@@ -174,7 +170,7 @@ public class PlayGround extends JComponent {
 //            y = random.nextDouble() * rangeY;
             x = i * SIDE_LENGTH;
             var tank = new Tank(x, y);
-            tanks.add(tank);
+            System.out.println(tank);
             Thread t = new Thread(new MoveTank(tank));
             t.start();
         }
@@ -188,79 +184,12 @@ public class PlayGround extends JComponent {
             this.target = target;
         }
 
-        private void delay(int milliseconds) {
-            try {
-                Thread.sleep(milliseconds);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
-
-        private boolean isCollide(Tank curRect, ArrayList<Tank> tanks) {
-                //rlock.lock();
-                try {
-                    for (var tank: tanks) {
-                        if (tank.getId() != target.getId() && curRect.intersects(tank)) {
-                            System.out.println(target + "collide->" + tank);
-                            return true;
-                        }
-                    }
-                }
-                finally {
-                    //rlock.unlock();
-                }
-                return false;
-        }
-
-        private void move(Directions direction, int steps) {
-
-            for (int i = 0; i < steps; i++) {
-                Double curX = this.target.getX();
-                Double curY = this.target.getY();
-                delay(DELAY);
-
-                switch (direction) {
-                    case EAST -> {
-                        curX += MOVE_DISTANCE;
-                    }
-                    case NORTH -> {
-                        curY += MOVE_DISTANCE;
-                    }
-                    case WEST -> {
-                        curX -= MOVE_DISTANCE;
-                    }
-                    case SOUTH -> {
-                        curY -= MOVE_DISTANCE;
-                    }
-                    default -> {
-
-                    }
-                }
-                // 边界检测
-                Tank rect = new Tank(curX , curY, SIDE_LENGTH, SIDE_LENGTH);
-                if (isCollide(rect, tanks) || curX + SIDE_LENGTH > DEFAULT_WIDTH || curX < 0 || curY + SIDE_LENGTH > DEFAULT_HEIGHT || curY < 0) {
-                    direction = direction.getNextRandomDirection();
-                    continue;
-                }
-                // 碰撞检测
-                //
-                //wlock.lock();
-                try {
-                    target.setFrame(curX, curY, SIDE_LENGTH, SIDE_LENGTH);
-                }
-                finally {
-                    //wlock.unlock();
-                }
-                repaint();
-            }
-        }
 
         @Override
         public void run() {
             while (true) {
-                // 随机移动次数
-                int steps = random.nextInt(DEFAULT_WIDTH / MOVE_DISTANCE);
-                move(Directions.CENTER.getNextRandomDirection(), steps);
+                System.out.println(target);
+                target.move();
             }
         }
     }
@@ -275,7 +204,7 @@ public class PlayGround extends JComponent {
         var g2 = (Graphics2D) g;
 //        g2.setPaint(Color.GREEN);
         // draw all tanks
-        for (Tank tank : tanks) {
+        for (Tank tank : Tank.tankGroup) {
             tank.paintSelf(g2);
         }
     }
