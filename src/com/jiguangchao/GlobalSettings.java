@@ -1,9 +1,10 @@
 package com.jiguangchao;
 
 public class GlobalSettings {
-    public static final int DEFAULT_WIDTH = 800;
-    public static final int DEFAULT_HEIGHT = 600;
-    public static final int MOVE_DISTANCE = 25;
-    public static final int DELAY = 20;
-    public static final int SIDE_LENGTH = 50;
+    public static final int DEFAULT_WIDTH = 1024;
+    public static final int DEFAULT_HEIGHT = 768;
+    public static final int SIDE_LENGTH = 60;
+    public static final int MOVE_DISTANCE = 1;
+    public static final int DELAY = 5;
+    public static final int TANK_NUM = 20;
 }
